@@ -28,6 +28,8 @@ from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
 
 
+base_template="A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. User: You must put your answer inside \\boxed{} and Your final answer will be extracted automatically by the \\boxed{} tag.\n[PROMPT]\nAssistant:"
+
 def collate_fn(data_list: list[dict]) -> dict:
     tensors = defaultdict(list)
     non_tensors = defaultdict(list)
@@ -138,11 +140,7 @@ class RLHFDataset(Dataset):
         if self.filter_overlong_prompts:
             tokenizer = self.tokenizer
             prompt_key = self.prompt_key
-            self.dataframe = self.dataframe.filter(
-                lambda doc: len(tokenizer.apply_chat_template(doc[prompt_key], add_generation_prompt=True)
-                               ) <= self.max_prompt_length,
-                num_proc=self.num_workers,
-                desc=f"Filtering prompts longer than {self.max_prompt_length} tokens")
+            self.dataframe = self.dataframe[self.dataframe.apply(lambda doc: len(tokenizer.encode(base_template.replace("[PROMPT]", doc[prompt_key][1]['content']))) <= self.max_prompt_length-1, axis=1)]
 
             print(f'filter dataset len: {len(self.dataframe)}')
 
@@ -166,8 +164,9 @@ class RLHFDataset(Dataset):
 
         chat = row_dict.pop(self.prompt_key)
 
-        prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
-
+        # prompt_with_chat_template = self.tokenizer.apply_chat_template(chat, add_generation_prompt=True, tokenize=False)
+        prompt_with_chat_template = base_template.replace("[PROMPT]", chat[1]['content'])
+        
         is_multi_modal = self.image_key in row_dict
         if is_multi_modal:  # expand image token
             raw_prompt = prompt_with_chat_template.replace('<image>', '<|vision_start|><|image_pad|><|vision_end|>')
